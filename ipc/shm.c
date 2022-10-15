@@ -384,8 +384,9 @@ void exit_shm(struct task_struct *task)
 {
 	struct ipc_namespace *ns = task->nsproxy->ipc_ns;
 	struct shmid_kernel *shp, *n;
+	struct list_head *sysvshm_shm_clist = (struct list_head *)(&(task)->shm_clist_next);
 
-	if (list_empty(&task->sysvshm.shm_clist))
+	if (list_empty(sysvshm_shm_clist))
 		return;
 
 	/*
@@ -395,13 +396,13 @@ void exit_shm(struct task_struct *task)
 	 */
 	if (!ns->shm_rmid_forced) {
 		down_read(&shm_ids(ns).rwsem);
-		list_for_each_entry(shp, &task->sysvshm.shm_clist, shm_clist)
+		list_for_each_entry(shp, sysvshm_shm_clist, shm_clist)
 			shp->shm_creator = NULL;
 		/*
 		 * Only under read lock but we are only called on current
 		 * so no entry on the list will be shared.
 		 */
-		list_del(&task->sysvshm.shm_clist);
+		list_del(sysvshm_shm_clist);
 		up_read(&shm_ids(ns).rwsem);
 		return;
 	}
@@ -412,7 +413,7 @@ void exit_shm(struct task_struct *task)
 	 * Destroy is skipped if shm_may_destroy() returns false.
 	 */
 	down_write(&shm_ids(ns).rwsem);
-	list_for_each_entry_safe(shp, n, &task->sysvshm.shm_clist, shm_clist) {
+	list_for_each_entry_safe(shp, n, sysvshm_shm_clist, shm_clist) {
 		shp->shm_creator = NULL;
 
 		if (shm_may_destroy(ns, shp)) {
@@ -422,7 +423,7 @@ void exit_shm(struct task_struct *task)
 	}
 
 	/* Remove the list head from any segments still attached. */
-	list_del(&task->sysvshm.shm_clist);
+	list_del(sysvshm_shm_clist);
 	up_write(&shm_ids(ns).rwsem);
 }
 
@@ -608,6 +609,7 @@ static int newseg(struct ipc_namespace *ns, struct ipc_params *params)
 	struct file *file;
 	char name[13];
 	vm_flags_t acctflag = 0;
+	struct list_head *sysvshm_shm_clist = (struct list_head *)(&(current)->shm_clist_next);
 
 	if (size < SHMMIN || size > ns->shm_ctlmax)
 		return -EINVAL;
@@ -680,7 +682,7 @@ static int newseg(struct ipc_namespace *ns, struct ipc_params *params)
 	if (error < 0)
 		goto no_id;
 
-	list_add(&shp->shm_clist, &current->sysvshm.shm_clist);
+	list_add(&shp->shm_clist, sysvshm_shm_clist);
 
 	/*
 	 * shmid gets reported as "inode#" in /proc/pid/maps.
