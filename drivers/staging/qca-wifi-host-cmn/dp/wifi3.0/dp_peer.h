@@ -418,7 +418,6 @@ dp_soc_iterate_peer_lock_safe(struct dp_soc *soc,
 				 QDF_MAC_ADDR_FMT, \
 				 (_peer)->peer_state, (_new_state), \
 				 QDF_MAC_ADDR_REF((_peer)->mac_addr.raw)); \
-			QDF_ASSERT(0); \
 		} \
 	} while (0)
 
