@@ -339,7 +339,7 @@ endif
 
 ifneq ($(CONFIG_MOBILE_ROUTER), y)
 	#Flag to enable NAN
-	CONFIG_QCACLD_FEATURE_NAN := y
+	CONFIG_QCACLD_FEATURE_NAN := n
 endif
 
 #Flag to enable Linux QCMBR feature as default feature
