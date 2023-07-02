@@ -32,7 +32,7 @@ struct process_monitor_statistic {
 };
 
 /* Default Enable */
-static int pm_monitor_enabled = 1;
+static int pm_monitor_enabled = 0;
 
 static struct workqueue_struct *asus_kernel_top_monitor_wq = NULL;
 
