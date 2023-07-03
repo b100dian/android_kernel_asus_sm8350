@@ -2069,7 +2069,7 @@ static bool cont_add(u32 caller_id, int facility, int level,
 	return true;
 }
 
-#ifdef CONFIG_MACH_ASUS
+#ifdef CONFIG_MACH_ASUS_INVALID
 static size_t log_output(int facility, int level, enum log_flags lflags, const char *dict, size_t dictlen, char *text, size_t text_len,u64 ts)
 #else
 static size_t log_output(int facility, int level, enum log_flags lflags, const char *dict, size_t dictlen, char *text, size_t text_len)
@@ -2101,7 +2101,7 @@ static size_t log_output(int facility, int level, enum log_flags lflags, const c
 	}
 
 	/* Store it in the record log */
-#ifdef CONFIG_MACH_ASUS
+#ifdef CONFIG_MACH_ASUS_INVALID
 	return log_store(caller_id, facility, level, lflags, ts,
 			 dict, dictlen, text, text_len);
 #else
@@ -2119,7 +2119,7 @@ int vprintk_store(int facility, int level,
 	char *text = textbuf;
 	size_t text_len;
 	enum log_flags lflags = 0;
-#ifdef CONFIG_MACH_ASUS
+#ifdef CONFIG_MACH_ASUS_INVALID
 	static char textbuf1[LOG_LINE_MAX];
 	char *text1 = textbuf1;
 	u64 ts = 0;
@@ -2131,14 +2131,14 @@ int vprintk_store(int facility, int level,
 	 * The printf needs to come first; we need the syslog
 	 * prefix which might be passed-in as a parameter.
 	 */
-#ifdef CONFIG_MACH_ASUS
+#ifdef CONFIG_MACH_ASUS_INVALID
 	text_len = vscnprintf(text1, sizeof(textbuf1), fmt, args);
 #else
 	text_len = vscnprintf(text, sizeof(textbuf), fmt, args);
 #endif
 
 	/* mark and strip a trailing newline */
-#ifdef CONFIG_MACH_ASUS
+#ifdef CONFIG_MACH_ASUS_INVALID
 	if (text_len && text1[text_len-1] == '\n') {
 #else
 	if (text_len && text[text_len-1] == '\n') {
@@ -2150,7 +2150,7 @@ int vprintk_store(int facility, int level,
 	/* strip kernel syslog prefix and extract log level or control flags */
 	if (facility == 0) {
 		int kern_level;
-#ifdef CONFIG_MACH_ASUS
+#ifdef CONFIG_MACH_ASUS_INVALID
 		while ((kern_level = printk_get_level(text1)) != 0) {
 #else
 
@@ -2166,14 +2166,14 @@ int vprintk_store(int facility, int level,
 			}
 
 			text_len -= 2;
-#ifdef CONFIG_MACH_ASUS
+#ifdef CONFIG_MACH_ASUS_INVALID
 			text1 += 2;
 #else
 			text += 2;
 #endif
 		}
 	}
-#ifdef CONFIG_MACH_ASUS
+#ifdef CONFIG_MACH_ASUS_INVALID
 	ts = local_clock();
 	time_size = print_time(ts, time_buf);
 	strncpy(text, time_buf, time_size);
@@ -2188,7 +2188,7 @@ int vprintk_store(int facility, int level,
 
 	if (dict)
 		lflags |= LOG_NEWLINE;
-#ifdef CONFIG_MACH_ASUS	
+#ifdef CONFIG_MACH_ASUS_INVALID
 	if (is_logging_to_asus_buffer) {
 		   write_to_asus_log_buffer(text, text_len, lflags);
 	}
