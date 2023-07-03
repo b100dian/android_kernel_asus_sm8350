@@ -1015,17 +1015,12 @@ static int cnss_subsys_shutdown(const struct subsys_desc *subsys_desc,
 void cnss_device_crashed(struct device *dev)
 {
 	struct cnss_plat_data *plat_priv = cnss_bus_dev_to_plat_priv(dev);
-	struct cnss_subsys_info *subsys_info;
 
 	if (!plat_priv)
 		return;
 
-	subsys_info = &plat_priv->subsys_info;
-	if (subsys_info->subsys_device) {
-		set_bit(CNSS_DRIVER_RECOVERY, &plat_priv->driver_state);
-		subsys_set_crash_status(subsys_info->subsys_device, true);
-		subsystem_restart_dev(subsys_info->subsys_device);
-	}
+        set_bit(CNSS_DRIVER_RECOVERY, &plat_priv->driver_state);
+        schedule_work(&plat_priv->recovery_work);
 }
 EXPORT_SYMBOL(cnss_device_crashed);
 
@@ -1059,6 +1054,22 @@ static int cnss_subsys_ramdump(int enable,
 
 static void cnss_recovery_work_handler(struct work_struct *work)
 {
+        struct cnss_plat_data *plat_priv =
+                container_of(work, struct cnss_plat_data, recovery_work);
+
+        if (!plat_priv->recovery_enabled)
+                panic("subsys-restart: Resetting the SoC wlan crashed\n");
+	
+        cnss_pr_dbg("subsys-restart: Resetting the SoC wlan crashed (non panic)\n");
+
+        cnss_bus_dev_shutdown(plat_priv);
+        cnss_bus_dev_ramdump(plat_priv);
+        msleep(RECOVERY_DELAY_MS);
+
+        int ret = cnss_bus_dev_powerup(plat_priv);
+        if (ret)
+                __pm_relax(plat_priv->recovery_ws);
+        return;
 }
 #else
 static void cnss_recovery_work_handler(struct work_struct *work)
@@ -2445,7 +2456,7 @@ static ssize_t recovery_store(struct device *dev,
 			      const char *buf, size_t count)
 {
 	struct cnss_plat_data *plat_priv = dev_get_drvdata(dev);
-	unsigned int recovery = 0;
+	unsigned int recovery = 1;
 
 	if (!plat_priv)
 		return -ENODEV;
