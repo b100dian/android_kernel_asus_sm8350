@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -395,6 +396,9 @@ CFG_INI_UINT("gDualMacFeatureDisable", 0, 6, 6, CFG_VALUE_OR_DEFAULT, \
  * support disabled, the value is defined by enum PM_AP_DFS_MASTER_MODE.
  * 0 - Disallow STA+SAP SCC on DFS channel
  * 1 - Allow STA+SAP SCC on DFS channel with master mode disabled
+ *       This needs gEnableDFSMasterCap enabled to allow SAP SCC with
+ *       STA on DFS but dfs master mode disabled. Single SAP is not allowed
+ *       on DFS.
  * 2 - enhance "1" with below requirement
  *	 a. Allow single SAP (GO) start on DFS channel.
  *	 b. Allow CAC process on DFS channel in single SAP (GO) mode
@@ -545,11 +549,18 @@ CFG_INI_UINT("g_mark_sap_indoor_as_disable", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
  * <ini>
  * g_enable_go_force_scc - Enable/Disable force SCC on P2P GO
  * @Min: 0
- * @Max: 1
+ * @Max: 2
  * @Default: 0
  *
  * This ini and along with "gWlanMccToSccSwitchMode" is used to enable
  * force SCC on P2P GO interface.
+ *
+ * GO_FORCE_SCC_DISABLED (value 0): GO force scc disabled and GO can come up
+ * in MCC mode
+ * GO_FORCE_SCC_STRICT (value 1): New GO will be forced to form on existing
+ * GO/STA/GC channel in start bss itself.
+ * GO_FORCE_SCC_LIBERAL (value 2): After SET KEY is done, do force SCC for the
+ * first GO to move to new GO channel.
  *
  * Supported Feature: P2P GO
  *
@@ -559,7 +570,7 @@ CFG_INI_UINT("g_mark_sap_indoor_as_disable", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
  */
 
 #define CFG_P2P_GO_ENABLE_FORCE_SCC \
-CFG_INI_UINT("g_enable_go_force_scc", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
+CFG_INI_UINT("g_enable_go_force_scc", 0, 2, 0, CFG_VALUE_OR_DEFAULT, \
 	     "Enable/Disable P2P GO force SCC")
 
 /**

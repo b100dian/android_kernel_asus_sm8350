@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -26,8 +27,8 @@
 #include "wlan_mlme_api.h"
 #include "wlan_crypto_global_api.h"
 #include "wlan_mlme_main.h"
+#include "wlan_cm_roam_api.h"
 
-#if defined(WLAN_FEATURE_ROAM_OFFLOAD) || defined(ROAM_OFFLOAD_V1)
 static struct wmi_unified
 *target_if_cm_roam_get_wmi_handle_from_vdev(struct wlan_objmgr_vdev *vdev)
 {
@@ -48,7 +49,6 @@ static struct wmi_unified
 
 	return wmi_handle;
 }
-#endif
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 /**
@@ -76,18 +76,246 @@ target_if_cm_roam_send_vdev_set_pcl_cmd(struct wlan_objmgr_vdev *vdev,
 	return wmi_unified_vdev_set_pcl_cmd(wmi_handle, &params);
 }
 
+/**
+ * target_if_roam_set_param() - set roam params in fw
+ * @wmi_handle: wmi handle
+ * @vdev_id: vdev id
+ * @param_id: parameter id
+ * @param_value: parameter value
+ *
+ * Return: QDF_STATUS_SUCCESS for success or error code
+ */
+static QDF_STATUS
+target_if_roam_set_param(wmi_unified_t wmi_handle, uint8_t vdev_id,
+			 uint32_t param_id, uint32_t param_value)
+{
+	struct vdev_set_params roam_param = {0};
+
+	roam_param.vdev_id = vdev_id;
+	roam_param.param_id = param_id;
+	roam_param.param_value = param_value;
+
+	return wmi_unified_roam_set_param_send(wmi_handle, &roam_param);
+}
+
+/**
+ * target_if_cm_roam_rt_stats_config() - Send enable/disable roam event stats
+ * commands to wmi
+ * @vdev: vdev object
+ * @vdev_id: vdev id
+ * @rstats_config: roam event stats config parameters
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS
+target_if_cm_roam_rt_stats_config(struct wlan_objmgr_vdev *vdev,
+				  uint8_t vdev_id, uint8_t rstats_config)
+{
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+	wmi_unified_t wmi_handle;
+
+	wmi_handle = target_if_cm_roam_get_wmi_handle_from_vdev(vdev);
+	if (!wmi_handle)
+		return status;
+
+	status = target_if_roam_set_param(
+				wmi_handle,
+				vdev_id,
+				WMI_ROAM_PARAM_ROAM_EVENTS_CONFIG,
+				rstats_config);
+
+	if (QDF_IS_STATUS_ERROR(status))
+		target_if_err("Failed to set "
+			      "WMI_ROAM_PARAM_ROAM_EVENTS_CONFIG");
+
+	return status;
+}
+
+/**
+ * target_if_cm_roam_ho_delay_config() - Send roam HO delay value to wmi
+ * @vdev: vdev object
+ * @vdev_id: vdev id
+ * @roam_ho_delay: roam hand-off delay value
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS
+target_if_cm_roam_ho_delay_config(struct wlan_objmgr_vdev *vdev,
+				  uint8_t vdev_id, uint16_t roam_ho_delay)
+{
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+	wmi_unified_t wmi_handle;
+
+	wmi_handle = target_if_cm_roam_get_wmi_handle_from_vdev(vdev);
+	if (!wmi_handle)
+		return status;
+
+	status = target_if_roam_set_param(
+				wmi_handle,
+				vdev_id,
+				WMI_ROAM_PARAM_ROAM_HO_DELAY_RUNTIME_CONFIG,
+				roam_ho_delay);
+
+	if (QDF_IS_STATUS_ERROR(status))
+		target_if_err("Failed to set "
+			      "WMI_ROAM_PARAM_ROAM_HO_DELAY_RUNTIME_CONFIG");
+
+	return status;
+}
+
+/**
+ * target_if_cm_exclude_rm_partial_scan_freq() - Indicate to FW whether to
+ * exclude the channels in roam full scan that are already scanned as part of
+ * partial scan or not.
+ * @vdev: vdev object
+ * @exclude_rm_partial_scan_freq: Include/exclude the channels in roam full scan
+ * that are already scanned as part of partial scan.
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS
+target_if_cm_exclude_rm_partial_scan_freq(struct wlan_objmgr_vdev *vdev,
+					  uint8_t exclude_rm_partial_scan_freq)
+{
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+	uint8_t vdev_id;
+	wmi_unified_t wmi_handle;
+
+	wmi_handle = target_if_cm_roam_get_wmi_handle_from_vdev(vdev);
+	if (!wmi_handle)
+		return status;
+
+	vdev_id = wlan_vdev_get_id(vdev);
+	status = target_if_roam_set_param(
+				wmi_handle, vdev_id,
+				WMI_ROAM_PARAM_ROAM_CONTROL_FULL_SCAN_CHANNEL_OPTIMIZATION,
+				exclude_rm_partial_scan_freq);
+
+	if (QDF_IS_STATUS_ERROR(status))
+		target_if_err("Failed to set WMI_ROAM_PARAM_ROAM_CONTROL_FULL_SCAN_CHANNEL_OPTIMIZATION");
+
+	return status;
+}
+
+/**
+ * target_if_cm_roam_full_scan_6ghz_on_disc() - Indicate to FW whether to
+ * include the 6 GHz channels in roam full scan only on prior discovery of any
+ * 6 GHz support in the environment or by default.
+ * @vdev: vdev object
+ * @roam_full_scan_6ghz_on_disc: Include the 6 GHz channels in roam full scan:
+ * 1 - Include only on prior discovery of any 6 GHz support in the environment
+ * 0 - Include all the supported 6 GHz channels by default
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS
+target_if_cm_roam_full_scan_6ghz_on_disc(struct wlan_objmgr_vdev *vdev,
+					 uint8_t roam_full_scan_6ghz_on_disc)
+{
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+	uint8_t vdev_id;
+	wmi_unified_t wmi_handle;
+
+	wmi_handle = target_if_cm_roam_get_wmi_handle_from_vdev(vdev);
+	if (!wmi_handle)
+		return status;
+
+	vdev_id = wlan_vdev_get_id(vdev);
+	status = target_if_roam_set_param(wmi_handle, vdev_id,
+					  WMI_ROAM_PARAM_ROAM_CONTROL_FULL_SCAN_6GHZ_PSC_ONLY_WITH_RNR,
+					  roam_full_scan_6ghz_on_disc);
+
+	if (QDF_IS_STATUS_ERROR(status))
+		target_if_err("Failed to set WMI_ROAM_PARAM_ROAM_CONTROL_FULL_SCAN_6GHZ_PSC_ONLY_WITH_RNR");
+
+	return status;
+}
+
+/**
+ * target_if_cm_roam_rssi_diff_6ghz() - Send the roam RSSI diff value to FW
+ * which is used to decide how better the RSSI of the new/roamable 6GHz AP
+ * should be for roaming.
+ * @vdev: vdev object
+ * @roam_rssi_diff_6ghz: RSSI diff value to be used for roaming to 6 GHz AP
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS
+target_if_cm_roam_rssi_diff_6ghz(struct wlan_objmgr_vdev *vdev,
+				 uint8_t roam_rssi_diff_6ghz)
+{
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+	uint8_t vdev_id;
+	wmi_unified_t wmi_handle;
+
+	wmi_handle = target_if_cm_roam_get_wmi_handle_from_vdev(vdev);
+	if (!wmi_handle)
+		return status;
+
+	vdev_id = wlan_vdev_get_id(vdev);
+	status = target_if_roam_set_param(
+				wmi_handle, vdev_id,
+				WMI_ROAM_PARAM_ROAM_RSSI_BOOST_FOR_6GHZ_CAND_AP,
+				roam_rssi_diff_6ghz);
+
+	if (QDF_IS_STATUS_ERROR(status))
+		target_if_err("Failed to set WMI_ROAM_PARAM_ROAM_RSSI_BOOST_FOR_6GHZ_CAND_AP");
+
+	return status;
+}
+
 static void
 target_if_cm_roam_register_lfr3_ops(struct wlan_cm_roam_tx_ops *tx_ops)
 {
 	tx_ops->send_vdev_set_pcl_cmd = target_if_cm_roam_send_vdev_set_pcl_cmd;
+	tx_ops->send_roam_rt_stats_config = target_if_cm_roam_rt_stats_config;
+	tx_ops->send_roam_ho_delay_config = target_if_cm_roam_ho_delay_config;
+	tx_ops->send_exclude_rm_partial_scan_freq =
+				target_if_cm_exclude_rm_partial_scan_freq;
+	tx_ops->send_roam_full_scan_6ghz_on_disc =
+				target_if_cm_roam_full_scan_6ghz_on_disc;
 }
 #else
 static inline void
 target_if_cm_roam_register_lfr3_ops(struct wlan_cm_roam_tx_ops *tx_ops)
 {}
+
+static QDF_STATUS
+target_if_cm_roam_rt_stats_config(struct wlan_objmgr_vdev *vdev,
+				  uint8_t vdev_id, uint8_t rstats_config)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static QDF_STATUS
+target_if_cm_roam_ho_delay_config(struct wlan_objmgr_vdev *vdev,
+				  uint8_t vdev_id, uint16_t roam_ho_delay)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static QDF_STATUS
+target_if_cm_exclude_rm_partial_scan_freq(struct wlan_objmgr_vdev *vdev,
+					  uint8_t exclude_rm_partial_scan_freq)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static QDF_STATUS
+target_if_cm_roam_full_scan_6ghz_on_disc(struct wlan_objmgr_vdev *vdev,
+					 uint8_t roam_full_scan_6ghz_on_disc)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static QDF_STATUS
+target_if_cm_roam_rssi_diff_6ghz(struct wlan_objmgr_vdev *vdev,
+				 uint8_t roam_rssi_diff_6ghz)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
 #endif
 
-#ifdef ROAM_OFFLOAD_V1
 /**
  * target_if_is_vdev_valid - vdev id is valid or not
  * @vdev_id: vdev id
@@ -516,65 +744,6 @@ target_if_cm_roam_scan_offload_scan_period(
 	return wmi_unified_roam_scan_offload_scan_period(wmi_handle, req);
 }
 
-#ifdef WLAN_FEATURE_11W
-/**
- * target_if_roam_fill_11w_params() - Fill the 11w related parameters
- * for ap profile
- * @vdev: vdev object
- * @req: roam ap profile parameters
- *
- * Return: None
- */
-static void
-target_if_cm_roam_fill_11w_params(struct wlan_objmgr_vdev *vdev,
-				  struct ap_profile_params *req)
-{
-	uint32_t group_mgmt_cipher;
-	uint16_t rsn_caps;
-	bool peer_rmf_capable = false;
-	uint32_t keymgmt;
-
-	if (!vdev) {
-		target_if_err("Invalid vdev");
-		return;
-	}
-
-	rsn_caps = (uint16_t)wlan_crypto_get_param(vdev,
-						   WLAN_CRYPTO_PARAM_RSN_CAP);
-	if (wlan_crypto_vdev_has_mgmtcipher(
-					vdev,
-					(1 << WLAN_CRYPTO_CIPHER_AES_GMAC) |
-					(1 << WLAN_CRYPTO_CIPHER_AES_GMAC_256) |
-					(1 << WLAN_CRYPTO_CIPHER_AES_CMAC)) &&
-					(rsn_caps &
-					 WLAN_CRYPTO_RSN_CAP_MFP_ENABLED))
-		peer_rmf_capable = true;
-
-	keymgmt = wlan_crypto_get_param(vdev, WLAN_CRYPTO_PARAM_MGMT_CIPHER);
-
-	if (keymgmt & (1 << WLAN_CRYPTO_CIPHER_AES_CMAC))
-		group_mgmt_cipher = WMI_CIPHER_AES_CMAC;
-	else if (keymgmt & (1 << WLAN_CRYPTO_CIPHER_AES_GMAC))
-		group_mgmt_cipher = WMI_CIPHER_AES_GMAC;
-	else if (keymgmt & (1 << WLAN_CRYPTO_CIPHER_AES_GMAC_256))
-		group_mgmt_cipher = WMI_CIPHER_BIP_GMAC_256;
-	 else
-		group_mgmt_cipher = WMI_CIPHER_NONE;
-
-	if (peer_rmf_capable) {
-		req->profile.rsn_mcastmgmtcipherset = group_mgmt_cipher;
-		req->profile.flags |= WMI_AP_PROFILE_FLAG_PMF;
-	} else {
-		req->profile.rsn_mcastmgmtcipherset = WMI_CIPHER_NONE;
-	}
-}
-#else
-static inline
-void target_if_cm_roam_fill_11w_params(struct wlan_objmgr_vdev *vdev,
-				       struct ap_profile_params *req)
-{}
-#endif
-
 /**
  * target_if_cm_roam_scan_offload_ap_profile() - send roam ap profile to
  * firmware
@@ -606,8 +775,6 @@ target_if_cm_roam_scan_offload_ap_profile(
 		req->profile.rsn_authmode =
 		target_if_cm_roam_scan_get_cckm_mode(vdev, rsn_authmode);
 
-	target_if_cm_roam_fill_11w_params(vdev, req);
-
 	db2dbm_enabled = wmi_service_enabled(wmi_handle,
 					     wmi_service_hw_db2dbm_support);
 	if (!req->profile.rssi_abs_thresh) {
@@ -627,6 +794,12 @@ target_if_cm_roam_scan_offload_ap_profile(
 		req->min_rssi_params[BMISS_MIN_RSSI].min_rssi -=
 						NOISE_FLOOR_DBM_DEFAULT;
 		req->min_rssi_params[BMISS_MIN_RSSI].min_rssi &= 0x000000ff;
+
+		req->min_rssi_params[MIN_RSSI_2G_TO_5G_ROAM].min_rssi -=
+						NOISE_FLOOR_DBM_DEFAULT;
+		req->min_rssi_params[MIN_RSSI_2G_TO_5G_ROAM].min_rssi &=
+						0x000000ff;
+
 	}
 
 	return wmi_unified_send_roam_scan_offload_ap_cmd(wmi_handle, req);
@@ -740,14 +913,14 @@ target_if_cm_roam_offload_11k_params(wmi_unified_t wmi_handle,
 	if (!wmi_service_enabled(wmi_handle,
 				 wmi_service_11k_neighbour_report_support)) {
 		target_if_err("FW doesn't support 11k offload");
-		return QDF_STATUS_E_NOSUPPORT;
+		return QDF_STATUS_SUCCESS;
 	}
 
 	/* If 11k enable command and ssid length is 0, drop it */
 	if (req->offload_11k_bitmask &&
 	    !req->neighbor_report_params.ssid.length) {
 		target_if_debug("SSID Len 0");
-		return QDF_STATUS_E_INVAL;
+		return QDF_STATUS_SUCCESS;
 	}
 
 	status = wmi_unified_offload_11k_cmd(wmi_handle, req);
@@ -811,6 +984,10 @@ target_if_get_wmi_roam_offload_flag(uint32_t flag)
 
 	if (flag & WLAN_ROAM_BMISS_FINAL_SCAN_TYPE)
 		roam_offload_flag |= WMI_ROAM_BMISS_FINAL_SCAN_TYPE_FLAG;
+
+	if (flag & WLAN_ROAM_SKIP_SAE_ROAM_4WAY_HANDSHAKE)
+		roam_offload_flag |=
+			WMI_VDEV_PARAM_SKIP_SAE_ROAM_4WAY_HANDSHAKE;
 
 	return roam_offload_flag;
 }
@@ -896,6 +1073,7 @@ target_if_cm_roam_send_start(struct wlan_objmgr_vdev *vdev,
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	wmi_unified_t wmi_handle;
 	struct wlan_objmgr_psoc *psoc;
+	uint8_t vdev_id;
 	bool bss_load_enabled;
 
 	wmi_handle = target_if_cm_roam_get_wmi_handle_from_vdev(vdev);
@@ -1016,6 +1194,28 @@ target_if_cm_roam_send_start(struct wlan_objmgr_vdev *vdev,
 
 	target_if_cm_roam_idle_params(wmi_handle, ROAM_SCAN_OFFLOAD_START,
 				      &req->idle_params);
+
+	vdev_id = wlan_vdev_get_id(vdev);
+	if (req->wlan_roam_rt_stats_config)
+		target_if_cm_roam_rt_stats_config(vdev, vdev_id,
+						  req->wlan_roam_rt_stats_config);
+
+	if (req->wlan_roam_ho_delay_config)
+		target_if_cm_roam_ho_delay_config(
+				vdev, vdev_id, req->wlan_roam_ho_delay_config);
+
+	if (req->wlan_exclude_rm_partial_scan_freq)
+		target_if_cm_exclude_rm_partial_scan_freq(
+				vdev, req->wlan_exclude_rm_partial_scan_freq);
+
+	if (req->wlan_roam_full_scan_6ghz_on_disc)
+		target_if_cm_roam_full_scan_6ghz_on_disc(
+				vdev, req->wlan_roam_full_scan_6ghz_on_disc);
+
+	if (req->wlan_roam_rssi_diff_6ghz)
+		target_if_cm_roam_rssi_diff_6ghz(vdev,
+						 req->wlan_roam_rssi_diff_6ghz);
+
 	/* add other wmi commands */
 end:
 	return status;
@@ -1233,6 +1433,28 @@ target_if_cm_roam_send_update_config(struct wlan_objmgr_vdev *vdev,
 				wmi_handle, ROAM_SCAN_OFFLOAD_UPDATE_CFG,
 				&req->idle_params);
 		target_if_cm_roam_triggers(vdev, &req->roam_triggers);
+
+		if (req->wlan_roam_rt_stats_config)
+			target_if_cm_roam_rt_stats_config(
+						vdev, vdev_id,
+						req->wlan_roam_rt_stats_config);
+
+		if (req->wlan_roam_ho_delay_config)
+			target_if_cm_roam_ho_delay_config(
+						vdev, vdev_id,
+						req->wlan_roam_ho_delay_config);
+
+		if (req->wlan_exclude_rm_partial_scan_freq)
+			target_if_cm_exclude_rm_partial_scan_freq(
+				vdev, req->wlan_exclude_rm_partial_scan_freq);
+
+		if (req->wlan_roam_full_scan_6ghz_on_disc)
+			target_if_cm_roam_full_scan_6ghz_on_disc(
+				vdev, req->wlan_roam_full_scan_6ghz_on_disc);
+
+		if (req->wlan_roam_rssi_diff_6ghz)
+			target_if_cm_roam_rssi_diff_6ghz(
+					vdev, req->wlan_roam_rssi_diff_6ghz);
 	}
 end:
 	return status;
@@ -1350,12 +1572,6 @@ target_if_cm_roam_register_rso_req_ops(struct wlan_cm_roam_tx_ops *tx_ops)
 	tx_ops->send_roam_disable_config =
 					target_if_cm_roam_send_disable_config;
 }
-#else
-static void
-target_if_cm_roam_register_rso_req_ops(struct wlan_cm_roam_tx_ops *tx_ops)
-{
-}
-#endif
 
 QDF_STATUS target_if_cm_roam_register_tx_ops(struct wlan_cm_roam_tx_ops *tx_ops)
 {

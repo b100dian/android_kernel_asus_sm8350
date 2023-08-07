@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -49,6 +50,10 @@
 
 #define HTT_SHIFT_UPPER_TIMESTAMP 32
 #define HTT_MASK_UPPER_TIMESTAMP 0xFFFFFFFF00000000
+
+#define HTT_HTC_PKT_STATUS_SUCCESS \
+	((pkt->htc_pkt.Status != QDF_STATUS_E_CANCELED) && \
+	(pkt->htc_pkt.Status != QDF_STATUS_E_RESOURCES))
 
 /*
  * dp_htt_get_ppdu_sniffer_ampdu_tlv_bitmap() - Get ppdu stats tlv
@@ -619,9 +624,10 @@ static inline QDF_STATUS DP_HTT_SEND_HTC_PKT(struct htt_soc *soc,
 	htt_command_record(soc->htt_logger_handle, cmd, buf);
 
 	status = htc_send_pkt(soc->htc_soc, &pkt->htc_pkt);
-	if (status == QDF_STATUS_SUCCESS)
+	if (status == QDF_STATUS_SUCCESS && HTT_HTC_PKT_STATUS_SUCCESS)
 		htt_htc_misc_pkt_list_add(soc, pkt);
-
+	else
+		soc->stats.fail_count++;
 	return status;
 }
 
@@ -643,6 +649,7 @@ htt_htc_misc_pkt_pool_free(struct htt_soc *soc)
 		if (htc_packet_get_magic_cookie(&(pkt->u.pkt.htc_pkt)) !=
 		    HTC_PACKET_MAGIC_COOKIE) {
 			pkt = next;
+			soc->stats.skip_count++;
 			continue;
 		}
 		netbuf = (qdf_nbuf_t) (pkt->u.pkt.htc_pkt.pNetBufContext);
@@ -659,6 +666,8 @@ htt_htc_misc_pkt_pool_free(struct htt_soc *soc)
 	}
 	soc->htt_htc_pkt_misclist = NULL;
 	HTT_TX_MUTEX_RELEASE(&soc->htt_tx_mutex);
+	dp_info("HTC Packets, fail count = %d, skip count = %d",
+		soc->stats.fail_count, soc->stats.skip_count);
 }
 
 /*
@@ -4086,6 +4095,45 @@ static struct ppdu_info *dp_htt_process_tlv(struct dp_pdev *pdev,
 }
 #endif /* FEATURE_PERPKT_INFO */
 
+#ifdef WLAN_FEATURE_PKT_CAPTURE_V2
+static void dp_htt_process_stats_tlv(struct dp_soc *soc,
+				     qdf_nbuf_t htt_t2h_msg)
+{
+	uint32_t length;
+	uint8_t tlv_type;
+	uint32_t tlv_length, tlv_expected_size;
+	uint8_t *tlv_buf;
+
+	uint32_t *msg_word = (uint32_t *) qdf_nbuf_data(htt_t2h_msg);
+
+	length = HTT_T2H_PPDU_STATS_PAYLOAD_SIZE_GET(*msg_word);
+
+	msg_word = msg_word + 4;
+
+	while (length > 0) {
+		tlv_buf = (uint8_t *)msg_word;
+		tlv_type = HTT_STATS_TLV_TAG_GET(*msg_word);
+		tlv_length = HTT_STATS_TLV_LENGTH_GET(*msg_word);
+
+		if (tlv_length == 0)
+			break;
+
+		tlv_length += HTT_TLV_HDR_LEN;
+
+		if (tlv_type == HTT_PPDU_STATS_FOR_SMU_TLV) {
+			tlv_expected_size = sizeof(htt_ppdu_stats_for_smu_tlv);
+
+			if (tlv_length >= tlv_expected_size)
+				dp_wdi_event_handler(
+					WDI_EVENT_PKT_CAPTURE_PPDU_STATS,
+					soc, msg_word, HTT_INVALID_VDEV,
+					WDI_NO_VAL, 0);
+		}
+		msg_word = (uint32_t *)((uint8_t *)tlv_buf + tlv_length);
+		length -= (tlv_length);
+	}
+}
+#endif
 /**
  * dp_txrx_ppdu_stats_handler() - Function to process HTT PPDU stats from FW
  * @soc: DP SOC handle
@@ -4131,6 +4179,15 @@ static bool dp_txrx_ppdu_stats_handler(struct dp_soc *soc,
 	pdev->mgmtctrl_frm_info.ppdu_id = 0;
 
 	return free_buf;
+}
+#elif defined(WLAN_FEATURE_PKT_CAPTURE_V2)
+static bool dp_txrx_ppdu_stats_handler(struct dp_soc *soc,
+				       uint8_t pdev_id, qdf_nbuf_t htt_t2h_msg)
+{
+	if (wlan_cfg_get_pkt_capture_mode(soc->wlan_cfg_ctx))
+		dp_htt_process_stats_tlv(soc, htt_t2h_msg);
+
+	return true;
 }
 #else
 static bool dp_txrx_ppdu_stats_handler(struct dp_soc *soc,
@@ -4448,6 +4505,34 @@ static void dp_htt_bkp_event_alert(u_int32_t *msg_word, struct htt_soc *soc)
 	dp_print_napi_stats(pdev->soc);
 }
 
+#ifdef WLAN_FEATURE_PKT_CAPTURE_V2
+/*
+ * dp_offload_ind_handler() - offload msg handler
+ * @htt_soc: HTT SOC handle
+ * @msg_word: Pointer to payload
+ *
+ * Return: None
+ */
+static void
+dp_offload_ind_handler(struct htt_soc *soc, uint32_t *msg_word)
+{
+	u_int8_t pdev_id;
+	u_int8_t target_pdev_id;
+
+	target_pdev_id = HTT_T2H_PPDU_STATS_PDEV_ID_GET(*msg_word);
+	pdev_id = dp_get_host_pdev_id_for_target_pdev_id(soc->dp_soc,
+							 target_pdev_id);
+	dp_wdi_event_handler(WDI_EVENT_PKT_CAPTURE_OFFLOAD_TX_DATA, soc->dp_soc,
+			     msg_word, HTT_INVALID_VDEV, WDI_NO_VAL,
+			     pdev_id);
+}
+#else
+static void
+dp_offload_ind_handler(struct htt_soc *soc, uint32_t *msg_word)
+{
+}
+#endif
+
 /*
  * dp_htt_t2h_msg_handler() - Generic Target to host Msg/event handler
  * @context:	Opaque context (HTT SOC handle)
@@ -4500,7 +4585,7 @@ static void dp_htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 				(u_int8_t *) (msg_word+1),
 				&mac_addr_deswizzle_buf[0]);
 			QDF_TRACE(QDF_MODULE_ID_TXRX,
-				QDF_TRACE_LEVEL_INFO,
+				QDF_TRACE_LEVEL_DEBUG,
 				"HTT_T2H_MSG_TYPE_PEER_MAP msg for peer id %d vdev id %d n",
 				peer_id, vdev_id);
 
@@ -4624,6 +4709,12 @@ static void dp_htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 					peer->mac_addr.raw, peer->vdev->vdev_id,
 					0, tid, 0, win_sz + 1, 0xffff);
 
+				dp_addba_resp_tx_completion_wifi3(
+					(struct cdp_soc_t *)soc->dp_soc,
+					peer->mac_addr.raw, peer->vdev->vdev_id,
+					tid,
+					status);
+
 				/*
 				 * If PEER_LOCK_REF_PROTECT enbled dec ref
 				 * which is inc by dp_peer_get_ref_by_id
@@ -4708,7 +4799,7 @@ static void dp_htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 			HTT_RX_PEER_MAP_V2_TID_VALID_HI_PRI_GET(*(msg_word + 5));
 
 			QDF_TRACE(QDF_MODULE_ID_TXRX,
-				  QDF_TRACE_LEVEL_INFO,
+				  QDF_TRACE_LEVEL_DEBUG,
 				  "HTT_T2H_MSG_TYPE_PEER_MAP msg for peer id %d vdev id %d n",
 				  peer_id, vdev_id);
 
@@ -4795,6 +4886,12 @@ static void dp_htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 
 			dp_rx_fst_update_cmem_params(soc->dp_soc, num_entries,
 						     cmem_ba_lo, cmem_ba_hi);
+			break;
+		}
+	case HTT_T2H_MSG_TYPE_TX_OFFLOAD_DELIVER_IND:
+		{
+			dp_offload_ind_handler(soc, msg_word);
+			break;
 		}
 	default:
 		break;

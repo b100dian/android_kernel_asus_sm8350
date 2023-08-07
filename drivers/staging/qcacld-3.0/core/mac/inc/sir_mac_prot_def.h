@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -134,6 +135,7 @@
 /* block acknowledgment action frame types */
 #define SIR_MAC_ACTION_VENDOR_SPECIFIC 9
 #define SIR_MAC_ACTION_VENDOR_SPECIFIC_CATEGORY     0x7F
+#define SIR_MAC_PROT_ACTION_VENDOR_SPECIFIC_CATEGORY 0x7E
 #define SIR_MAC_ACTION_P2P_SUBTYPE_PRESENCE_RSP     2
 
 /* Public Action for 20/40 BSS Coexistence */
@@ -254,6 +256,7 @@
 
 /* Association/Reassociation offsets */
 #define SIR_MAC_REASSOC_REQ_SSID_OFFSET      10
+#define SIR_MAC_ASSOC_RSP_STATUS_CODE_OFFSET 2
 
 /* Association Request offsets */
 #define SIR_MAC_ASSOC_REQ_SSID_OFFSET        4
@@ -337,9 +340,18 @@
 #define SIR_MAC_VENDOR_AP_4_OUI             "\x8C\xFD\xF0"
 #define SIR_MAC_VENDOR_AP_4_OUI_LEN         3
 
-/* Maximum allowable size of a beacon and probe rsp frame */
-#define SIR_MAX_BEACON_SIZE    512
+#define SIR_MAC_BA_2K_JUMP_AP_VENDOR_OUI             "\x00\x14\x6C"
+#define SIR_MAC_BA_2K_JUMP_AP_VENDOR_OUI_LEN         3
+
+#define SIR_MAC_BAD_HTC_HE_VENDOR_OUI1             "\x00\x50\xF2\x11"
+#define SIR_MAC_BAD_HTC_HE_VENDOR_OUI2             "\x00\x50\xF2\x12"
+#define SIR_MAC_BAD_HTC_HE_VENDOR_OUI_LEN         4
+
+/* Maximum allowable size of a beacon,probe rsp and fils discovery frame */
+#define SIR_MAX_BEACON_SIZE     512
 #define SIR_MAX_PROBE_RESP_SIZE 512
+#define SIR_MAX_FD_TMPL_SIZE    512
+
 
 /* / Frame control field format (2 bytes) */
 typedef struct sSirMacFrameCtl {
@@ -1368,7 +1380,6 @@ typedef struct sSirMacBeaconReport {
 
 } tSirMacBeaconReport, *tpSirMacBeaconReport;
 
-#define RADIO_REPORTS_MAX_IN_A_FRAME 7
 typedef struct sSirMacRadioMeasureReport {
 	uint8_t token;
 	uint8_t refused;
@@ -1715,6 +1726,19 @@ struct he_capability_info {
 	uint16_t rx_he_mcs_map_80_80;
 	uint16_t tx_he_mcs_map_80_80;
 #endif
+} qdf_packed;
+
+struct he_6ghz_capability_info {
+	uint16_t min_mpdu_start_spacing:3;
+	uint16_t    max_ampdu_len_exp:3;
+	uint16_t         max_mpdu_len:2;
+
+	uint16_t             reserved:1;
+	uint16_t          sm_pow_save:2;
+	uint16_t         rd_responder:1;
+	uint16_t rx_ant_pattern_consistency:1;
+	uint16_t tx_ant_pattern_consistency:1;
+	uint16_t             reserved2:2;
 } qdf_packed;
 #endif
 

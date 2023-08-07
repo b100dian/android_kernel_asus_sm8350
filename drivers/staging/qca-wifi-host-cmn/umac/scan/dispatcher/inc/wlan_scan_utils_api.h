@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -713,7 +714,9 @@ util_scan_copy_beacon_data(struct scan_cache_entry *new_entry,
 	ie_lst->bwnss_map = conv_ptr(ie_lst->bwnss_map, old_ptr, new_ptr);
 	ie_lst->mdie = conv_ptr(ie_lst->mdie, old_ptr, new_ptr);
 	ie_lst->hecap = conv_ptr(ie_lst->hecap, old_ptr, new_ptr);
+	ie_lst->hecap_6g = conv_ptr(ie_lst->hecap_6g, old_ptr, new_ptr);
 	ie_lst->heop = conv_ptr(ie_lst->heop, old_ptr, new_ptr);
+	ie_lst->srp = conv_ptr(ie_lst->srp, old_ptr, new_ptr);
 	ie_lst->fils_indication = conv_ptr(ie_lst->fils_indication,
 					   old_ptr, new_ptr);
 	ie_lst->esp = conv_ptr(ie_lst->esp, old_ptr, new_ptr);
@@ -1719,4 +1722,20 @@ static inline bool util_scan_is_null_ssid(struct wlan_ssid *ssid)
 	return false;
 }
 
+/**
+ * util_scan_get_6g_oper_channel() - function to get primary channel
+ * from he op IE
+ * he_op_ie : ie pointer
+ *
+ * Return : primary channel or 0 if 6g params is not present.
+ */
+#ifdef CONFIG_BAND_6GHZ
+uint8_t util_scan_get_6g_oper_channel(uint8_t *he_op_ie);
+#else
+static inline uint8_t
+util_scan_get_6g_oper_channel(uint8_t *he_op_ie)
+{
+	return 0;
+}
+#endif
 #endif

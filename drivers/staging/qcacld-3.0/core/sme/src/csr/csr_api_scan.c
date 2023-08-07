@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1394,6 +1395,15 @@ QDF_STATUS csr_scan_for_ssid(struct mac_context *mac_ctx, uint32_t session_id,
 		req->scan_req.chan_list.num_chan = num_chan;
 	}
 
+	/* Add freq hint for scan for ssid */
+	if (!num_chan && profile->freq_hint &&
+	    csr_roam_is_valid_channel(mac_ctx, profile->freq_hint)) {
+		sme_debug("add freq hint %d", profile->freq_hint);
+		req->scan_req.chan_list.chan[0].freq =
+						profile->freq_hint;
+		req->scan_req.chan_list.num_chan = 1;
+	}
+
 	/* Extend it for multiple SSID */
 	if (profile->SSIDs.numOfSSIDs) {
 		if (profile->SSIDs.SSIDList[0].SSID.length > WLAN_SSID_MAX_LEN) {
@@ -2099,38 +2109,55 @@ static void csr_update_bss_with_fils_data(struct mac_context *mac_ctx,
 					  struct bss_description *bss_descr)
 {
 	int ret;
-	tDot11fIEfils_indication fils_indication = {0};
-	struct sir_fils_indication fils_ind;
+	tDot11fIEfils_indication *fils_indication;
+	struct sir_fils_indication *fils_ind;
 
 	if (!scan_entry->ie_list.fils_indication)
 		return;
+
+	fils_indication = qdf_mem_malloc(sizeof(*fils_indication));
+	if (!fils_indication) {
+		sme_err("malloc failed for fils_indication");
+		return;
+	}
 
 	ret = dot11f_unpack_ie_fils_indication(mac_ctx,
 				scan_entry->ie_list.fils_indication +
 				SIR_FILS_IND_ELEM_OFFSET,
 				*(scan_entry->ie_list.fils_indication + 1),
-				&fils_indication, false);
+				fils_indication, false);
 	if (DOT11F_FAILED(ret)) {
 		sme_err("unpack failed ret: 0x%x", ret);
+		qdf_mem_free(fils_indication);
 		return;
 	}
 
-	update_fils_data(&fils_ind, &fils_indication);
-	if (fils_ind.realm_identifier.realm_cnt > SIR_MAX_REALM_COUNT)
-		fils_ind.realm_identifier.realm_cnt = SIR_MAX_REALM_COUNT;
+	fils_ind = qdf_mem_malloc(sizeof(*fils_ind));
+	if (!fils_ind) {
+		sme_err("malloc failed for fils_ind");
+		qdf_mem_free(fils_indication);
+		return;
+	}
+
+	update_fils_data(fils_ind, fils_indication);
+	if (fils_ind->realm_identifier.realm_cnt > SIR_MAX_REALM_COUNT)
+		fils_ind->realm_identifier.realm_cnt = SIR_MAX_REALM_COUNT;
 
 	bss_descr->fils_info_element.realm_cnt =
-		fils_ind.realm_identifier.realm_cnt;
+		fils_ind->realm_identifier.realm_cnt;
 	qdf_mem_copy(bss_descr->fils_info_element.realm,
-			fils_ind.realm_identifier.realm,
+			fils_ind->realm_identifier.realm,
 			bss_descr->fils_info_element.realm_cnt * SIR_REALM_LEN);
-	if (fils_ind.cache_identifier.is_present) {
+	if (fils_ind->cache_identifier.is_present) {
 		bss_descr->fils_info_element.is_cache_id_present = true;
 		qdf_mem_copy(bss_descr->fils_info_element.cache_id,
-			fils_ind.cache_identifier.identifier, CACHE_ID_LEN);
+			fils_ind->cache_identifier.identifier, CACHE_ID_LEN);
 	}
-	if (fils_ind.is_fils_sk_auth_supported)
+	if (fils_ind->is_fils_sk_auth_supported)
 		bss_descr->fils_info_element.is_fils_sk_supported = true;
+
+	 qdf_mem_free(fils_ind);
+	 qdf_mem_free(fils_indication);
 }
 #else
 static void csr_update_bss_with_fils_data(struct mac_context *mac_ctx,
@@ -2149,15 +2176,17 @@ static void csr_update_bss_with_fils_data(struct mac_context *mac_ctx,
  * Return: None
  */
 static void
-csr_fill_single_pmk_ap_cap_from_scan_entry(struct bss_description *bss_desc,
+csr_fill_single_pmk_ap_cap_from_scan_entry(struct mac_context *mac_ctx,
+					   struct bss_description *bss_desc,
 					   struct scan_cache_entry *scan_entry)
 {
-	bss_desc->is_single_pmk = util_scan_entry_single_pmk(scan_entry);
+	bss_desc->is_single_pmk = util_scan_entry_single_pmk(scan_entry) &&
+			  mac_ctx->mlme_cfg->lfr.sae_single_pmk_feature_enabled;
 }
-
 #else
 static inline void
-csr_fill_single_pmk_ap_cap_from_scan_entry(struct bss_description *bss_desc,
+csr_fill_single_pmk_ap_cap_from_scan_entry(struct mac_context *mac_ctx,
+					   struct bss_description *bss_desc,
 					   struct scan_cache_entry *scan_entry)
 {
 }
@@ -2219,7 +2248,7 @@ static QDF_STATUS csr_fill_bss_from_scan_entry(struct mac_context *mac_ctx,
 	qdf_mem_copy(bss_desc->bssId,
 			scan_entry->bssid.bytes,
 			QDF_MAC_ADDR_SIZE);
-	bss_desc->scansystimensec = scan_entry->scan_entry_time;
+	bss_desc->scansystimensec = scan_entry->boottime_ns;
 	qdf_mem_copy(bss_desc->timeStamp,
 		scan_entry->tsf_info.data, 8);
 
@@ -2256,7 +2285,8 @@ static QDF_STATUS csr_fill_bss_from_scan_entry(struct mac_context *mac_ctx,
 	bss_desc->mbo_oce_enabled_ap =
 			util_scan_entry_mbo_oce(scan_entry) ? true : false;
 
-	csr_fill_single_pmk_ap_cap_from_scan_entry(bss_desc, scan_entry);
+	csr_fill_single_pmk_ap_cap_from_scan_entry(mac_ctx, bss_desc,
+						   scan_entry);
 
 	qdf_mem_copy(&bss_desc->mbssid_info, &scan_entry->mbssid_info,
 		     sizeof(struct scan_mbssid_info));
@@ -2608,8 +2638,7 @@ void csr_init_occupied_channels_list(struct mac_context *mac_ctx,
 	struct wlan_channel *chan;
 	struct wlan_objmgr_vdev *vdev;
 
-	tpCsrNeighborRoamControlInfo neighbor_roam_info =
-		&mac_ctx->roam.neighborRoamInfo[sessionId];
+	tpCsrNeighborRoamControlInfo neighbor_roam_info;
 	tCsrRoamConnectedProfile *profile = NULL;
 	QDF_STATUS status;
 
@@ -2618,6 +2647,7 @@ void csr_init_occupied_channels_list(struct mac_context *mac_ctx,
 		sme_debug("Invalid session");
 		return;
 	}
+	neighbor_roam_info = &mac_ctx->roam.neighborRoamInfo[sessionId];
 	if (neighbor_roam_info->cfgParams.specific_chan_info.numOfChannels) {
 		/*
 		 * Ini file contains neighbor scan channel list, hence NO need
@@ -2666,8 +2696,6 @@ void csr_init_occupied_channels_list(struct mac_context *mac_ctx,
 			&mac_ctx->scan.occupiedChannels[sessionId],
 			true);
 	list = ucfg_scan_get_result(pdev, filter);
-	if (list)
-		sme_debug("num_entries %d", qdf_list_size(list));
 	if (!list || (list && !qdf_list_size(list))) {
 		goto err;
 	}
@@ -2688,12 +2716,14 @@ void csr_init_occupied_channels_list(struct mac_context *mac_ctx,
 
 	dual_sta_roam_active =
 			wlan_mlme_get_dual_sta_roaming_enabled(mac_ctx->psoc);
+	dual_sta_roam_active = dual_sta_roam_active &&
+			       policy_mgr_mode_specific_connection_count
+				(mac_ctx->psoc, PM_STA_MODE, NULL) >= 2;
 
 	qdf_list_peek_front(list, &cur_lst);
 	while (cur_lst) {
 		cur_node = qdf_container_of(cur_lst, struct scan_cache_node,
 					    node);
-
 		if (csr_should_add_to_occupied_channels
 					(chan->ch_freq,
 					 cur_node->entry->channel.chan_freq,
@@ -2767,4 +2797,16 @@ QDF_STATUS csr_scan_filter_results(struct mac_context *mac_ctx)
 
 	wlan_objmgr_pdev_release_ref(pdev, WLAN_LEGACY_MAC_ID);
 	return QDF_STATUS_SUCCESS;
+}
+
+void csr_update_beacon(struct mac_context *mac)
+{
+	struct scheduler_msg msg = { 0 };
+	QDF_STATUS status;
+
+	msg.type = SIR_LIM_UPDATE_BEACON;
+	status = scheduler_post_message(QDF_MODULE_ID_SME, QDF_MODULE_ID_PE,
+					QDF_MODULE_ID_PE, &msg);
+	if (status != QDF_STATUS_SUCCESS)
+		sme_err("scheduler_post_message failed, status = %u", status);
 }

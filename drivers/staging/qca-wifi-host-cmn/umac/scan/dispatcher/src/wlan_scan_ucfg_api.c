@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -152,6 +153,12 @@ QDF_STATUS ucfg_scan_deinit(void)
 }
 
 #ifdef FEATURE_WLAN_SCAN_PNO
+bool
+ucfg_is_6ghz_pno_scan_optimization_supported(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_psoc_nif_fw_ext_cap_get(psoc,
+					WLAN_SOC_PNO_SCAN_CONFIG_PER_CHANNEL);
+}
 
 QDF_STATUS ucfg_scan_pno_start(struct wlan_objmgr_vdev *vdev,
 	struct pno_scan_req_params *req)
@@ -176,6 +183,25 @@ QDF_STATUS ucfg_scan_pno_start(struct wlan_objmgr_vdev *vdev,
 		scan_vdev_obj->pno_in_progress = true;
 
 	return status;
+}
+
+void ucfg_scan_add_flags_to_pno_chan_list(struct wlan_objmgr_vdev *vdev,
+					  struct pno_scan_req_params *req,
+					  uint8_t *num_chan,
+					  uint32_t short_ssid,
+					  int list_idx)
+{
+	struct chan_list *pno_chan_list =
+				    &req->networks_list[list_idx].pno_chan_list;
+
+	/* Add RNR flags to channels based on scan_mode_6g ini */
+	scm_add_channel_flags(vdev, pno_chan_list, num_chan,
+			      req->scan_policy_colocated_6ghz, true);
+	/* Filter RNR flags in pno channel list based on short ssid entry in
+	 * RNR db cache.
+	 */
+	scm_filter_rnr_flag_pno(vdev, short_ssid,
+				&req->networks_list[0].pno_chan_list);
 }
 
 QDF_STATUS ucfg_scan_pno_stop(struct wlan_objmgr_vdev *vdev)
@@ -260,6 +286,8 @@ wlan_pno_global_init(struct wlan_objmgr_psoc *psoc,
 			cfg_get(psoc, CFG_MAX_SCHED_SCAN_PLAN_INTERVAL);
 	pno_def->max_sched_scan_plan_iterations =
 			cfg_get(psoc, CFG_MAX_SCHED_SCAN_PLAN_ITERATIONS);
+	pno_def->user_config_sched_scan_plan =
+			cfg_get(psoc, CFG_USER_CONFIG_SCHED_SCAN_PLAN);
 
 	mawc_cfg->enable = cfg_get(psoc, CFG_MAWC_NLO_ENABLED);
 	mawc_cfg->exp_backoff_ratio =
@@ -873,10 +901,16 @@ wlan_scan_global_init(struct wlan_objmgr_psoc *psoc,
 				cfg_get(psoc, CFG_ENABLE_WAKE_LOCK_IN_SCAN);
 	scan_obj->scan_def.active_dwell_2g =
 			 cfg_get(psoc, CFG_ACTIVE_MAX_2G_CHANNEL_TIME);
+	scan_obj->scan_def.min_dwell_time_6g =
+			cfg_get(psoc, CFG_MIN_6G_CHANNEL_TIME);
 	scan_obj->scan_def.active_dwell_6g =
 			 cfg_get(psoc, CFG_ACTIVE_MAX_6G_CHANNEL_TIME);
 	scan_obj->scan_def.passive_dwell_6g =
 			 cfg_get(psoc, CFG_PASSIVE_MAX_6G_CHANNEL_TIME);
+	scan_obj->scan_def.active_dwell_time_6g_conc =
+			 cfg_get(psoc, CFG_ACTIVE_MAX_6G_CHANNEL_TIME_CONC);
+	scan_obj->scan_def.passive_dwell_time_6g_conc =
+			 cfg_get(psoc, CFG_PASSIVE_MAX_6G_CHANNEL_TIME_CONC);
 	scan_obj->scan_def.passive_dwell =
 			 cfg_get(psoc, CFG_PASSIVE_MAX_CHANNEL_TIME);
 	scan_obj->scan_def.max_rest_time = SCAN_MAX_REST_TIME;
@@ -945,6 +979,14 @@ wlan_scan_global_init(struct wlan_objmgr_psoc *psoc,
 	scan_obj->scan_def.enable_connected_scan =
 		cfg_get(psoc, CFG_ENABLE_CONNECTED_SCAN);
 	scan_obj->scan_def.scan_mode_6g = cfg_get(psoc, CFG_6GHZ_SCAN_MODE);
+	scan_obj->scan_def.duty_cycle_6ghz =
+		cfg_get(psoc, CFG_6GHZ_SCAN_MODE_DUTY_CYCLE);
+	scan_obj->allow_bss_with_incomplete_ie =
+		cfg_get(psoc, CFG_SCAN_ALLOW_BSS_WITH_CORRUPTED_IE);
+
+	scan_obj->scan_def.skip_6g_and_indoor_freq =
+		cfg_get(psoc, CFG_SKIP_6GHZ_AND_INDOOR_FREQ_SCAN);
+
 	/* init scan id seed */
 	qdf_atomic_init(&scan_obj->scan_ids);
 
@@ -1066,6 +1108,7 @@ ucfg_scan_init_default_params(struct wlan_objmgr_vdev *vdev,
 	req->scan_req.scan_priority = def->scan_priority;
 	req->scan_req.dwell_time_active = def->active_dwell;
 	req->scan_req.dwell_time_active_2g = def->active_dwell_2g;
+	req->scan_req.min_dwell_time_6g = def->min_dwell_time_6g;
 	req->scan_req.dwell_time_active_6g = def->active_dwell_6g;
 	req->scan_req.dwell_time_passive_6g = def->passive_dwell_6g;
 	req->scan_req.dwell_time_passive = def->passive_dwell;
@@ -1955,4 +1998,17 @@ ucfg_scan_get_max_sched_scan_plan_iterations(struct wlan_objmgr_psoc *psoc)
 	return scan_obj->pno_cfg.max_sched_scan_plan_iterations;
 }
 
+bool
+ucfg_scan_get_user_config_sched_scan_plan(struct wlan_objmgr_psoc *psoc)
+{
+	struct wlan_scan_obj *scan_obj;
+
+	scan_obj = wlan_psoc_get_scan_obj(psoc);
+	if (!scan_obj) {
+		scm_err("Failed to get scan object");
+		return cfg_default(CFG_MAX_SCHED_SCAN_PLAN_ITERATIONS);
+	}
+
+	return scan_obj->pno_cfg.user_config_sched_scan_plan;
+}
 #endif

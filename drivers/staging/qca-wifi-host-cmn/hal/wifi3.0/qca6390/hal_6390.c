@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1027,9 +1028,9 @@ hal_reo_set_err_dst_remap_6390(void *hal_soc)
 		HAL_REO_ERR_REMAP_IX0(REO_REMAP_RELEASE, 3) |
 		HAL_REO_ERR_REMAP_IX0(REO_REMAP_RELEASE, 4) |
 		HAL_REO_ERR_REMAP_IX0(REO_REMAP_TCL, 5) |
-		HAL_REO_ERR_REMAP_IX0(REO_REMAP_RELEASE, 6) |
+		HAL_REO_ERR_REMAP_IX0(REO_REMAP_TCL, 6) |
 		HAL_REO_ERR_REMAP_IX0(REO_REMAP_TCL, 7) |
-		HAL_REO_ERR_REMAP_IX0(REO_REMAP_RELEASE, 8) |
+		HAL_REO_ERR_REMAP_IX0(REO_REMAP_TCL, 8) |
 		HAL_REO_ERR_REMAP_IX0(REO_REMAP_RELEASE, 9);
 
 		HAL_REG_WRITE(hal_soc,
@@ -1088,6 +1089,19 @@ void hal_compute_reo_remap_ix2_ix3_6390(uint32_t *ring, uint32_t num_rings,
 				HAL_REO_REMAP_IX3(ring[3], 31);
 		break;
 	}
+}
+
+static
+void hal_compute_reo_remap_ix0_6390(uint32_t *remap0)
+{
+	*remap0 = HAL_REO_REMAP_IX0(REO_REMAP_SW1, 0) |
+			HAL_REO_REMAP_IX0(REO_REMAP_SW1, 1) |
+			HAL_REO_REMAP_IX0(REO_REMAP_SW2, 2) |
+			HAL_REO_REMAP_IX0(REO_REMAP_SW3, 3) |
+			HAL_REO_REMAP_IX0(REO_REMAP_SW2, 4) |
+			HAL_REO_REMAP_IX0(REO_REMAP_RELEASE, 5) |
+			HAL_REO_REMAP_IX0(REO_REMAP_FW, 6) |
+			HAL_REO_REMAP_IX0(REO_REMAP_FW, 7);
 }
 
 struct hal_hw_txrx_ops qca6390_hal_hw_txrx_ops = {
@@ -1202,6 +1216,7 @@ struct hal_hw_txrx_ops qca6390_hal_hw_txrx_ops = {
 	hal_rx_mpdu_end_offset_get_generic,
 	NULL,
 	hal_compute_reo_remap_ix2_ix3_6390,
+	hal_compute_reo_remap_ix0_6390,
 	NULL,
 	NULL,
 	NULL,

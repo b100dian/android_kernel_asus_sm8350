@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -772,6 +773,26 @@ struct dhcp_server {
 	"enable/disable MAC address provisioning feature")
 
 /*
+ * </ini>
+ * read_mac_addr_from_mac_file - Use/ignore MAC address from mac cfg file
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This ini is used whether to configure MAC address from the cfg file or not
+ *
+ * Supported Feature: STA/SAP/P2P
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_READ_MAC_ADDR_FROM_MAC_FILE CFG_INI_BOOL( \
+	"read_mac_addr_from_mac_file", \
+	0, \
+	"Use/ignore MAC address from cfg file")
+
+/*
  * <ini>
  * provisioned_intf_pool - It is bit mask value of Interfaces
  * @Min: 0
@@ -1329,6 +1350,14 @@ struct dhcp_server {
  *   OUI data Len: 00
  *   Info Mask : 01 - only OUI present in Info mask
  *
+ * OUI 3: 000ce7
+ *   OUI data Len: 00
+ *   Info Mask : 01 - only OUI present in Info mask
+ *
+ * OUI 4: 00e0fc
+ *   OUI data Len: 00
+ *   Info Mask : 01 - only OUI present in Info mask
+ *
  * Refer to gEnableActionOUI for more detail about the format.
  *
  * Related: gEnableActionOUI
@@ -1343,7 +1372,7 @@ struct dhcp_server {
 	"gActionOUIDisableTWT", \
 	0, \
 	ACTION_OUI_MAX_STR_LEN, \
-	"001018 00 01 000986 00 01", \
+	"001018 00 01 000986 00 01 000ce7 00 01 00e0fc 00 01", \
 	"Used to specify action OUIs to control TWT configuration")
 
 /* End of action oui inis */
@@ -1624,33 +1653,9 @@ struct dhcp_server {
 			CFG_VALUE_OR_DEFAULT, \
 			"Station stats cache expiry")
 
-/*
- * <ini>
- * send_ll_and_get_station_stats_over_qmi - Flag to send clubbed ll_stats and
- *                                          get_station request over qmi
- *
- * @Min: 0
- * @Max: 1
- * Default: 0
- *
- * This ini param is used to send the unified ll_stats and get_station request
- * over qmi.
- *
- * Supported Feature: STA
- *
- * Usage: Internal
- *
- * </ini>
- */
-#define CFG_SEND_LL_AND_GET_STATION_STATS_OVER_QMI CFG_INI_BOOL( \
-			"send_ll_and_get_station_stats_over_qmi", \
-			0, \
-			"send ll and get station stats over qmi")
-
 #define CFG_WLAN_CLUB_GET_STA_IN_LL_STA_REQ \
 	 CFG(CFG_CLUB_LL_STA_AND_GET_STATION) \
-	 CFG(CFG_STA_STATS_CACHE_EXPIRY) \
-	 CFG(CFG_SEND_LL_AND_GET_STATION_STATS_OVER_QMI)
+	 CFG(CFG_STA_STATS_CACHE_EXPIRY)
 #else
 #define CFG_WLAN_CLUB_GET_STA_IN_LL_STA_REQ
 #endif /* FEATURE_CLUB_LL_STATS_AND_GET_STATION */
@@ -1808,6 +1813,7 @@ enum host_log_level {
 	CFG(CFG_NB_COMMANDS_RATE_LIMIT) \
 	CFG(CFG_HDD_DOT11_MODE) \
 	CFG(CFG_ENABLE_DISABLE_CHANNEL) \
+	CFG(CFG_READ_MAC_ADDR_FROM_MAC_FILE) \
 	CFG(CFG_SAR_CONVERSION) \
 	CFG(CFG_WOW_DISABLE) \
 	CFG(CFG_ENABLE_HOST_MODULE_LOG_LEVEL) \

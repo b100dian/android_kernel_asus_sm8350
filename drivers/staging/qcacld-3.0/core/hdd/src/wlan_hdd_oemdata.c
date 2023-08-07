@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -191,6 +192,7 @@ static void send_oem_reg_rsp_nlink_msg(void)
 	uint8_t *device_mode;
 	uint8_t *vdev_id;
 	struct hdd_adapter *adapter, *next_adapter = NULL;
+	wlan_net_dev_ref_dbgid dbgid = NET_DEV_HOLD_SEND_OEM_REG_RSP_NLINK_MSG;
 
 	/* OEM msg is always to a specific process & cannot be a broadcast */
 	if (p_hdd_ctx->oem_pid == 0) {
@@ -221,7 +223,8 @@ static void send_oem_reg_rsp_nlink_msg(void)
 	*num_interfaces = 0;
 
 	/* Iterate through each adapter and fill device mode and vdev id */
-	hdd_for_each_adapter_dev_held_safe(p_hdd_ctx, adapter, next_adapter) {
+	hdd_for_each_adapter_dev_held_safe(p_hdd_ctx, adapter, next_adapter,
+					   dbgid) {
 		device_mode = buf++;
 		vdev_id = buf++;
 		*device_mode = adapter->device_mode;
@@ -230,7 +233,7 @@ static void send_oem_reg_rsp_nlink_msg(void)
 		hdd_debug("num_interfaces: %d, device_mode: %d, vdev_id: %d",
 			  *num_interfaces, *device_mode,
 			  *vdev_id);
-		dev_put(adapter->dev);
+		hdd_adapter_dev_put_debug(adapter, dbgid);
 	}
 
 	ani_hdr->length =
@@ -1250,6 +1253,11 @@ __wlan_hdd_cfg80211_oem_data_handler(struct wiphy *wiphy,
 		.timeout_ms = WLAN_WAIT_TIME_GET_OEM_DATA,
 		.dealloc = wlan_hdd_free_oem_data,
 	};
+
+	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
+		hdd_err("Command not allowed in FTM mode");
+		return -EPERM;
+	}
 
 	ret = wlan_hdd_validate_context(hdd_ctx);
 	if (ret)

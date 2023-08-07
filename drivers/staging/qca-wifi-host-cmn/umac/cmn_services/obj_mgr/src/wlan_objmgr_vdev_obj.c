@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -303,9 +304,10 @@ static QDF_STATUS wlan_objmgr_vdev_obj_destroy(struct wlan_objmgr_vdev *vdev)
 	obj_mgr_debug("Physically deleting vdev %d", vdev_id);
 
 	if (vdev->obj_state != WLAN_OBJ_STATE_LOGICALLY_DELETED) {
-		obj_mgr_err("VDEV object delete is not invoked vdevid:%d objstate:%d",
-			    wlan_vdev_get_id(vdev), vdev->obj_state);
+		obj_mgr_alert("VDEV object delete is not invoked vdevid:%d objstate:%d",
+			      wlan_vdev_get_id(vdev), vdev->obj_state);
 		WLAN_OBJMGR_BUG(0);
+		return QDF_STATUS_E_FAILURE;
 	}
 
 	/* Invoke registered destroy handlers */
@@ -1414,7 +1416,7 @@ QDF_STATUS wlan_vdev_get_bss_peer_mac(struct wlan_objmgr_vdev *vdev,
 
 	peer = wlan_objmgr_vdev_try_get_bsspeer(vdev, WLAN_MLME_OBJMGR_ID);
 	if (!peer) {
-		obj_mgr_err("not able to find bss peer for vdev %d",
+		obj_mgr_debug("not able to find bss peer for vdev %d",
 			    wlan_vdev_get_id(vdev));
 		return QDF_STATUS_E_INVAL;
 	}

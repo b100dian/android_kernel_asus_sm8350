@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -38,6 +39,8 @@
 #define DP_TX_DESC_FLAG_TDLS_FRAME	0x100
 #define DP_TX_DESC_FLAG_ALLOCATED	0x200
 #define DP_TX_DESC_FLAG_MESH_MODE	0x400
+#define DP_TX_DESC_FLAG_TX_COMP_ERR	0x1000
+#define DP_TX_DESC_FLAG_FLUSH		0x2000
 
 #define DP_TX_EXT_DESC_FLAG_METADATA_VALID 0x1
 
@@ -529,4 +532,53 @@ QDF_STATUS dp_peer_set_tx_capture_enabled(struct dp_pdev *pdev,
 #endif
 void dp_tx_desc_flush(struct dp_pdev *pdev, struct dp_vdev *vdev,
 		      bool force_free);
+
+#ifdef WLAN_FEATURE_PKT_CAPTURE_V2
+void dp_send_completion_to_pkt_capture(struct dp_soc *soc,
+				       struct dp_tx_desc_s *desc,
+				       struct hal_tx_completion_status *ts);
+#else
+static inline void
+dp_send_completion_to_pkt_capture(struct dp_soc *soc,
+				  struct dp_tx_desc_s *desc,
+				  struct hal_tx_completion_status *ts)
+{
+}
+#endif
+
+#ifdef WLAN_FEATURE_TSF_UPLINK_DELAY
+/**
+ * dp_set_delta_tsf() - Set delta_tsf to dp_soc structure
+ * @soc_hdl: cdp soc pointer
+ * @vdev_id: vdev id
+ * @delta_tsf: difference between TSF clock and qtimer
+ *
+ * Return: None
+ */
+void dp_set_delta_tsf(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
+		      uint32_t delta_tsf);
+
+/**
+ * dp_set_tsf_report_ul_delay() - Enable or disable reporting uplink delay
+ * @soc_hdl: cdp soc pointer
+ * @vdev_id: vdev id
+ * @enable: true to enable and false to disable
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS dp_set_tsf_ul_delay_report(struct cdp_soc_t *soc_hdl,
+				      uint8_t vdev_id, bool enable);
+
+/**
+ * dp_get_uplink_delay() - Get uplink delay value
+ * @soc_hdl: cdp soc pointer
+ * @vdev_id: vdev id
+ * @val: pointer to save uplink delay value
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS dp_get_uplink_delay(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
+			       uint32_t *val);
+#endif /* WLAN_FEATURE_TSF_UPLINK_TSF */
+
 #endif

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1745,6 +1746,51 @@ QDF_STATUS hdd_wmm_adapter_close(struct hdd_adapter *adapter)
 }
 
 /**
+ * hdd_check_and_upgrade_udp_qos() - Check and upgrade the qos for UDP packets
+ *				     if the current set priority is below the
+ *				     pre-configured threshold for upgrade.
+ * @adapter: [in] pointer to the adapter context (Should not be invalid)
+ * @skb: [in] pointer to the packet to be transmitted
+ * @user_pri: [out] priority set for this packet
+ *
+ * This function checks if the packet is a UDP packet and upgrades its
+ * priority if its below the pre-configured upgrade threshold.
+ * The upgrade order is as below:
+ * BK -> BE -> VI -> VO
+ *
+ * Return: none
+ */
+static inline void
+hdd_check_and_upgrade_udp_qos(struct hdd_adapter *adapter,
+			      qdf_nbuf_t skb,
+			      enum sme_qos_wmmuptype *user_pri)
+{
+	/* Upgrade UDP pkt priority alone */
+	if (!(qdf_nbuf_is_ipv4_udp_pkt(skb) || qdf_nbuf_is_ipv6_udp_pkt(skb)))
+		return;
+
+	switch (adapter->upgrade_udp_qos_threshold) {
+	case QCA_WLAN_AC_BK:
+		break;
+	case QCA_WLAN_AC_BE:
+		if (*user_pri == qca_wlan_ac_to_sme_qos(QCA_WLAN_AC_BK))
+			*user_pri = qca_wlan_ac_to_sme_qos(QCA_WLAN_AC_BE);
+
+		break;
+	case QCA_WLAN_AC_VI:
+	case QCA_WLAN_AC_VO:
+		if (*user_pri <
+		    qca_wlan_ac_to_sme_qos(adapter->upgrade_udp_qos_threshold))
+			*user_pri = qca_wlan_ac_to_sme_qos(
+					adapter->upgrade_udp_qos_threshold);
+
+		break;
+	default:
+		break;
+	}
+}
+
+/**
  * hdd_wmm_classify_pkt() - Function which will classify an OS packet
  * into a WMM AC based on DSCP
  *
@@ -1869,12 +1915,7 @@ void hdd_wmm_classify_pkt(struct hdd_adapter *adapter,
 	 * Upgrade the priority, if the user priority of this packet is
 	 * less than the configured threshold.
 	 */
-	if (*user_pri < adapter->upgrade_udp_qos_threshold &&
-	    (qdf_nbuf_is_ipv4_udp_pkt(skb) || qdf_nbuf_is_ipv6_udp_pkt(skb))) {
-		/* Upgrade UDP pkt priority alone */
-		*user_pri = qca_wlan_ac_to_sme_qos(
-				adapter->upgrade_udp_qos_threshold);
-	}
+	hdd_check_and_upgrade_udp_qos(adapter, skb, user_pri);
 
 #ifdef HDD_WMM_DEBUG
 	hdd_debug("tos is %d, dscp is %d, up is %d", tos, dscp, *user_pri);
@@ -2794,6 +2835,11 @@ static int __wlan_hdd_cfg80211_config_tspec(struct wiphy *wiphy,
 	int ret;
 
 	hdd_enter_dev(wdev->netdev);
+
+	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
+		hdd_err("Command not allowed in FTM mode");
+		return -EPERM;
+	}
 
 	ret = wlan_hdd_validate_context(hdd_ctx);
 	if (ret != 0)

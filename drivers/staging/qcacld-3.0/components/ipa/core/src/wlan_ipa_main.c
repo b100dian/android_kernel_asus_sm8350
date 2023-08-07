@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
- *
+ * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all
@@ -566,24 +566,33 @@ bool ipa_is_tx_pending(struct wlan_objmgr_pdev *pdev)
 QDF_STATUS ipa_uc_ol_deinit(struct wlan_objmgr_pdev *pdev)
 {
 	struct wlan_ipa_priv *ipa_obj;
+	QDF_STATUS status;
 
 	if (!ipa_config_is_enabled()) {
 		ipa_debug("ipa is disabled");
 		return QDF_STATUS_SUCCESS;
 	}
 
+	ipa_init_deinit_lock();
+
 	if (!ipa_is_ready()) {
 		ipa_debug("ipa is not ready");
-		return QDF_STATUS_SUCCESS;
+		status = QDF_STATUS_SUCCESS;
+		goto out;
 	}
 
 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
 	if (!ipa_obj) {
 		ipa_err("IPA object is NULL");
-		return QDF_STATUS_E_FAILURE;
+		status = QDF_STATUS_E_FAILURE;
+		goto out;
 	}
 
-	return wlan_ipa_uc_ol_deinit(ipa_obj);
+	status = wlan_ipa_uc_ol_deinit(ipa_obj);
+
+out:
+	ipa_init_deinit_unlock();
+	return status;
 }
 
 QDF_STATUS ipa_send_mcc_scc_msg(struct wlan_objmgr_pdev *pdev,
@@ -745,16 +754,30 @@ void ipa_fw_rejuvenate_send_msg(struct wlan_objmgr_pdev *pdev)
 
 void ipa_component_config_update(struct wlan_objmgr_psoc *psoc)
 {
+	struct device *dev;
 	QDF_STATUS status;
 
+	if (!wlan_psoc_get_qdf_dev(psoc)) {
+		ipa_err("wlan_psoc_get_qdf_dev returned NULL");
+		return;
+	}
+
+	dev = wlan_psoc_get_qdf_dev(psoc)->dev;
 	status = ipa_config_mem_alloc();
 	if (QDF_IS_STATUS_ERROR(status)) {
 		ipa_err("Failed to alloc g_ipa_config");
 		return;
 	}
 
-	g_ipa_config->ipa_config =
-		cfg_get(psoc, CFG_DP_IPA_OFFLOAD_CONFIG);
+	if (!pld_is_ipa_offload_disabled(dev)) {
+		g_ipa_config->ipa_config =
+			cfg_get(psoc, CFG_DP_IPA_OFFLOAD_CONFIG);
+		ipa_info("IPA ini configuration: 0x%x",
+			 g_ipa_config->ipa_config);
+	} else {
+		g_ipa_config->ipa_config = 0;
+		ipa_info("IPA disabled from platform driver");
+	}
 	g_ipa_config->desc_size =
 		cfg_get(psoc, CFG_DP_IPA_DESC_SIZE);
 	g_ipa_config->txbuf_count =

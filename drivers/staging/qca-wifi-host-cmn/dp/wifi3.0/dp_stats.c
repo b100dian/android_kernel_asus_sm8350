@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -85,6 +86,8 @@ static const struct cdp_rate_debug dp_ppdu_rate_string[DOT11_MAX][MAX_MCS] = {
 		{"HE MCS 9 (256-QAM 5/6)  ", MCS_VALID},
 		{"HE MCS 10 (1024-QAM 3/4)", MCS_VALID},
 		{"HE MCS 11 (1024-QAM 5/6)", MCS_VALID},
+		{"HE MCS 12 (4096-QAM 3/4)", MCS_VALID},
+		{"HE MCS 13 (4096-QAM 5/6)", MCS_VALID},
 		{"INVALID ", MCS_VALID},
 	}
 };
@@ -104,6 +107,8 @@ dp_mu_rate_string[RX_TYPE_MU_MAX][MAX_MCS] = {
 		{"HE MU-MIMO MCS 9 (256-QAM 5/6)  ", MCS_VALID},
 		{"HE MU-MIMO MCS 10 (1024-QAM 3/4)", MCS_VALID},
 		{"HE MU-MIMO MCS 11 (1024-QAM 5/6)", MCS_VALID},
+		{"HE MU-MIMO MCS 12 (4096-QAM 3/4)", MCS_VALID},
+		{"HE MU-MIMO MCS 13 (4096-QAM 5/6)", MCS_VALID},
 		{"INVALID ", MCS_VALID},
 	},
 	{
@@ -119,6 +124,8 @@ dp_mu_rate_string[RX_TYPE_MU_MAX][MAX_MCS] = {
 		{"HE OFDMA MCS 9 (256-QAM 5/6)  ", MCS_VALID},
 		{"HE OFDMA MCS 10 (1024-QAM 3/4)", MCS_VALID},
 		{"HE OFDMA MCS 11 (1024-QAM 5/6)", MCS_VALID},
+		{"HE OFDMA MCS 12 (4096-QAM 3/4)", MCS_VALID},
+		{"HE OFDMA MCS 13 (4096-QAM 5/6)", MCS_VALID},
 		{"INVALID ", MCS_VALID},
 	},
 };
@@ -4910,6 +4917,10 @@ void dp_print_soc_cfg_params(struct dp_soc *soc)
 		       soc_cfg_ctx->sg_enabled);
 	DP_PRINT_STATS("Gro enabled: %u ",
 		       soc_cfg_ctx->gro_enabled);
+	DP_PRINT_STATS("TC based dynamic GRO: %u ",
+		       soc_cfg_ctx->tc_based_dynamic_gro);
+	DP_PRINT_STATS("TC ingress prio: %u ",
+		       soc_cfg_ctx->tc_ingress_prio);
 	DP_PRINT_STATS("rawmode enabled: %u ",
 		       soc_cfg_ctx->rawmode_enabled);
 	DP_PRINT_STATS("peer flow ctrl enabled: %u ",
@@ -5950,6 +5961,8 @@ void dp_txrx_path_stats(struct dp_soc *soc)
 			       pdev->stats.tx.dropped.fw_rem_notx);
 		DP_PRINT_STATS("Invalid peer on tx path: %u",
 			       pdev->soc->stats.tx.tx_invalid_peer.num);
+		DP_PRINT_STATS("Tx desc freed in non-completion path: %u",
+			       pdev->soc->stats.tx.tx_comp_exception);
 
 		DP_PRINT_STATS("Tx packets sent per interrupt:");
 		DP_PRINT_STATS("Single Packet: %u",
@@ -5990,6 +6003,8 @@ void dp_txrx_path_stats(struct dp_soc *soc)
 			       pdev->stats.rx.intra_bss.fail.bytes);
 		DP_PRINT_STATS("intra-bss no mdns fwds %u msdus",
 			       pdev->stats.rx.intra_bss.mdns_no_fwd);
+		DP_PRINT_STATS("intra-bss EAPOL drops: %u",
+			       soc->stats.rx.err.intrabss_eapol_drop);
 
 		DP_PRINT_STATS("raw packets %u msdus ( %llu bytes),",
 			       pdev->stats.rx.raw.num,
@@ -6048,6 +6063,8 @@ void dp_txrx_path_stats(struct dp_soc *soc)
 
 		DP_PRINT_STATS("hal ring access full fail: %u msdus",
 			       pdev->soc->stats.rx.err.hal_ring_access_full_fail);
+
+		DP_PRINT_STATS("Rx BAR frames:%d", soc->stats.rx.bar_frame);
 
 		for (error_code = 0; error_code < HAL_REO_ERR_MAX;
 				error_code++) {
@@ -6548,6 +6565,8 @@ dp_print_soc_rx_stats(struct dp_soc *soc)
 		       soc->stats.rx.err.defrag_peer_uninit);
 	DP_PRINT_STATS("Pkts delivered no peer = %d",
 		       soc->stats.rx.err.pkt_delivered_no_peer);
+	DP_PRINT_STATS("Pkts drop due to no peer auth :%d",
+		       soc->stats.rx.err.peer_unauth_rx_pkt_drop);
 	DP_PRINT_STATS("Invalid Pdev = %d",
 		       soc->stats.rx.err.invalid_pdev);
 	DP_PRINT_STATS("Invalid Peer = %d",
@@ -6614,6 +6633,12 @@ dp_print_soc_rx_stats(struct dp_soc *soc)
 	DP_PRINT_STATS("Rx nbuf sanity fail: %d",
 		       soc->stats.rx.err.nbuf_sanity_fail);
 
+	DP_PRINT_STATS("ssn update count: %d",
+		       soc->stats.rx.err.ssn_update_count);
+
+	DP_PRINT_STATS("bar handle update fail count: %d",
+		       soc->stats.rx.err.bar_handle_fail_count);
+
 	for (i = 0; i < HAL_RXDMA_ERR_MAX; i++) {
 		index += qdf_snprint(&rxdma_error[index],
 				DP_RXDMA_ERR_LENGTH - index,
@@ -6630,6 +6655,14 @@ dp_print_soc_rx_stats(struct dp_soc *soc)
 	DP_PRINT_STATS("REO Error(0-14):%s", reo_error);
 	DP_PRINT_STATS("REO CMD SEND FAIL: %d",
 		       soc->stats.rx.err.reo_cmd_send_fail);
+
+	DP_PRINT_STATS("Rx BAR frames:%d", soc->stats.rx.bar_frame);
+	DP_PRINT_STATS("Rxdma2rel route drop:%d",
+		       soc->stats.rx.rxdma2rel_route_drop);
+	DP_PRINT_STATS("Reo2rel route drop:%d",
+		       soc->stats.rx.reo2rel_route_drop);
+	DP_PRINT_STATS("Rx invalid TID count:%d",
+		       soc->stats.rx.err.rx_invalid_tid_err);
 }
 
 #ifdef FEATURE_TSO_STATS

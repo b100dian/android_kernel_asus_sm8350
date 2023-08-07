@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -24,7 +25,20 @@
 #include "wlan_cm_roam_ucfg_api.h"
 #include "../../core/src/wlan_cm_roam_offload.h"
 
-#ifdef ROAM_OFFLOAD_V1
+bool ucfg_is_roaming_enabled(struct wlan_objmgr_pdev *pdev, uint8_t vdev_id)
+{
+	struct wlan_objmgr_psoc *psoc = wlan_pdev_get_psoc(pdev);
+	enum roam_offload_state cur_state;
+
+	cur_state = mlme_get_roam_state(psoc, vdev_id);
+	if (cur_state == WLAN_ROAM_RSO_ENABLED ||
+	    cur_state == WLAN_ROAMING_IN_PROG ||
+	    cur_state == WLAN_ROAM_SYNCH_IN_PROG)
+		return true;
+
+	return false;
+}
+
 QDF_STATUS
 ucfg_user_space_enable_disable_rso(struct wlan_objmgr_pdev *pdev,
 				   uint8_t vdev_id,
@@ -114,4 +128,41 @@ QDF_STATUS ucfg_cm_abort_roam_scan(struct wlan_objmgr_pdev *pdev,
 
 	return status;
 }
-#endif
+
+#ifdef WLAN_FEATURE_ROAM_OFFLOAD
+QDF_STATUS
+ucfg_cm_roam_send_rt_stats_config(struct wlan_objmgr_pdev *pdev,
+				  uint8_t vdev_id, uint8_t param_value)
+{
+	struct wlan_objmgr_psoc *psoc = wlan_pdev_get_psoc(pdev);
+
+	return cm_roam_send_rt_stats_config(psoc, vdev_id, param_value);
+}
+
+QDF_STATUS
+ucfg_cm_roam_send_ho_delay_config(struct wlan_objmgr_pdev *pdev,
+				  uint8_t vdev_id, uint16_t param_value)
+{
+	struct wlan_objmgr_psoc *psoc = wlan_pdev_get_psoc(pdev);
+
+	return cm_roam_send_ho_delay_config(psoc, vdev_id, param_value);
+}
+
+QDF_STATUS
+ucfg_cm_exclude_rm_partial_scan_freq(struct wlan_objmgr_pdev *pdev,
+				     uint8_t vdev_id, uint8_t param_value)
+{
+	struct wlan_objmgr_psoc *psoc = wlan_pdev_get_psoc(pdev);
+
+	return cm_exclude_rm_partial_scan_freq(psoc, vdev_id, param_value);
+}
+
+QDF_STATUS ucfg_cm_roam_full_scan_6ghz_on_disc(struct wlan_objmgr_pdev *pdev,
+					       uint8_t vdev_id,
+					       uint8_t param_value)
+{
+	struct wlan_objmgr_psoc *psoc = wlan_pdev_get_psoc(pdev);
+
+	return cm_roam_full_scan_6ghz_on_disc(psoc, vdev_id, param_value);
+}
+#endif /* WLAN_FEATURE_ROAM_OFFLOAD */

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -721,8 +722,8 @@ bool wlan_crypto_check_wpa_match(struct wlan_objmgr_psoc *psoc,
  *
  * Return: pointer to RSNXE capability or NULL
  */
-uint8_t *
-wlan_crypto_parse_rsnxe_ie(uint8_t *rsnxe_ie, uint8_t *cap_len);
+const uint8_t *
+wlan_crypto_parse_rsnxe_ie(const uint8_t *rsnxe_ie, uint8_t *cap_len);
 
 /**
  * wlan_get_crypto_params_from_wapi_ie - Function to get crypto params
@@ -926,6 +927,16 @@ QDF_STATUS wlan_crypto_set_key_req(struct wlan_objmgr_vdev *vdev,
  * Return: None
  */
 void wlan_crypto_free_vdev_key(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * wlan_crypto_reset_vdev_params - Reset params for vdev
+ * @vdev: vdev object
+ *
+ * This function reset params stored in vdev crypto object.
+ *
+ * Return: None
+ */
+void wlan_crypto_reset_vdev_params(struct wlan_objmgr_vdev *vdev);
 #else
 static inline void wlan_crypto_update_set_key_peer(
 						struct wlan_objmgr_vdev *vdev,
@@ -957,6 +968,10 @@ QDF_STATUS wlan_crypto_set_key_req(struct wlan_objmgr_vdev *vdev,
 }
 
 static inline void wlan_crypto_free_vdev_key(struct wlan_objmgr_vdev *vdev)
+{
+}
+
+static inline void wlan_crypto_reset_vdev_prarams(struct wlan_objmgr_vdev *vdev)
 {
 }
 #endif /* CRYPTO_SET_KEY_CONVERGED */
@@ -1054,7 +1069,7 @@ wlan_crypto_selective_clear_sae_single_pmk_entries(
 		struct wlan_objmgr_vdev *vdev, struct qdf_mac_addr *conn_bssid);
 
 /**
- * wlan_crypto_set_sae_single_pmk_bss_cap - Set the peer SAE sinlge pmk
+ * wlan_crypto_set_sae_single_pmk_bss_cap - Set the peer SAE single pmk
  * feature supported status
  * @vdev: Vdev
  * @bssid: BSSID for which the flag is to be set
@@ -1064,6 +1079,16 @@ wlan_crypto_selective_clear_sae_single_pmk_entries(
 void wlan_crypto_set_sae_single_pmk_bss_cap(struct wlan_objmgr_vdev *vdev,
 					    struct qdf_mac_addr *bssid,
 					    bool single_pmk_capable_bss);
+
+/**
+ * wlan_crypto_set_sae_single_pmk_info - Set the peer SAE single pmk info
+ * @vdev: Vdev
+ * @roam_sync_pmksa: pmk info for roamed AP
+ */
+void
+wlan_crypto_set_sae_single_pmk_info(struct wlan_objmgr_vdev *vdev,
+				    struct wlan_crypto_pmksa *roam_sync_pmksa);
+
 #else
 static inline void
 wlan_crypto_selective_clear_sae_single_pmk_entries(
@@ -1075,6 +1100,12 @@ static inline
 void wlan_crypto_set_sae_single_pmk_bss_cap(struct wlan_objmgr_vdev *vdev,
 					    struct qdf_mac_addr *bssid,
 					    bool single_pmk_capable_bss)
+{
+}
+
+static inline void
+wlan_crypto_set_sae_single_pmk_info(struct wlan_objmgr_vdev *vdev,
+				    struct wlan_crypto_pmksa *roam_sync_pmksa)
 {
 }
 #endif

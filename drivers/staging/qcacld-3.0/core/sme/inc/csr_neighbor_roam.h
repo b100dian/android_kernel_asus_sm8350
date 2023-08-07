@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -227,18 +228,6 @@ QDF_STATUS csr_post_roam_state_change(struct mac_context *mac, uint8_t vdev_id,
 				      enum roam_offload_state state,
 				      uint8_t reason);
 
-#ifndef ROAM_OFFLOAD_V1
-/**
- * csr_post_rso_stop() - Post RSO stop message to WMA
- * @mac: mac context
- * @vdev_id: vdev id
- * @reason: reason for requesting RSO stop
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS
-csr_post_rso_stop(struct mac_context *mac, uint8_t vdev_id, uint16_t reason);
-#endif
 /**
  * csr_enable_roaming_on_connected_sta() - Enable roaming on other connected
  *  sta vdev
@@ -275,14 +264,6 @@ QDF_STATUS csr_post_roam_state_change(struct mac_context *mac, uint8_t vdev_id,
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }
-
-#ifndef ROAM_OFFLOAD_V1
-static inline
-csr_post_rso_stop(struct mac_context *mac, uint8_t vdev_id, uint16_t reason)
-{
-	return QDF_STATUS_E_NOSUPPORT;
-}
-#endif
 
 static inline QDF_STATUS
 csr_enable_roaming_on_connected_sta(struct mac_context *mac, uint8_t vdev_id)
@@ -400,6 +381,7 @@ QDF_STATUS
 csr_process_roam_pmkid_req_callback(struct mac_context *mac_ctx,
 				    uint8_t vdev_id,
 				    struct roam_pmkid_req_event *roam_bsslist);
+
 #else
 static inline QDF_STATUS
 csr_roam_pmkid_req_callback(uint8_t vdev_id,
@@ -408,7 +390,9 @@ csr_roam_pmkid_req_callback(uint8_t vdev_id,
 	return QDF_STATUS_SUCCESS;
 }
 #endif /* WLAN_FEATURE_FIPS */
-
+QDF_STATUS
+csr_roam_candidate_event_handle_callback(struct mac_context *mac_ctx,
+					 uint8_t *frame, uint32_t len);
 #else
 static inline QDF_STATUS csr_roam_synch_callback(struct mac_context *mac,
 	struct roam_offload_synch_ind *roam_synch_data,
@@ -439,6 +423,13 @@ csr_roam_pmkid_req_callback(uint8_t vdev_id,
 			    struct roam_pmkid_req_event *bss_list)
 {
 	return QDF_STATUS_E_NOSUPPORT;
+}
+
+QDF_STATUS
+csr_roam_candidate_event_handle_callback(struct mac_context *mac_ctx,
+					 uint8_t *frame, uint32_t len)
+{
+	return QDF_STATUS_SUCCESS;
 }
 #endif
 void csr_neighbor_roam_state_transition(struct mac_context *mac_ctx,

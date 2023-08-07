@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -317,33 +318,6 @@ end:
 		wma_err("Failed to set vdev param WMI_VDEV_PARAM_TX_PWRLIMIT");
 }
 
-void wma_send_max_tx_pwrlmt(WMA_HANDLE handle, uint8_t vdev_id)
-{
-	uint32_t max_tx_pwr;
-	struct wma_txrx_node *iface;
-	struct vdev_mlme_obj *mlme_obj;
-	tp_wma_handle wma_handle = (tp_wma_handle) handle;
-
-	iface = &wma_handle->interfaces[vdev_id];
-	if (!iface) {
-		wma_err("Failed to get iface handle for vdev_id %d", vdev_id);
-		return;
-	}
-
-	mlme_obj = wlan_vdev_mlme_get_cmpt_obj(iface->vdev);
-	if (!mlme_obj)
-		return;
-
-	max_tx_pwr = mlme_obj->mgmt.generic.tx_pwrlimit;
-	if (!max_tx_pwr)
-		return;
-
-	wma_nofl_debug("TXP[W][send_max_tx_pwr]: %d", max_tx_pwr);
-	wma_vdev_set_param(wma_handle->wmi_handle, vdev_id,
-			   WMI_VDEV_PARAM_TX_PWRLIMIT,
-			   max_tx_pwr);
-}
-
 /**
  * wma_set_max_tx_power() - set max tx power limit in fw
  * @handle: wma handle
@@ -385,10 +359,6 @@ void wma_set_max_tx_power(WMA_HANDLE handle,
 	}
 
 	iface = &wma_handle->interfaces[vdev_id];
-	if (mlme_get_max_reg_power(iface->vdev) == tx_pwr_params->power) {
-		ret = QDF_STATUS_SUCCESS;
-		goto end;
-	}
 	prev_max_power = mlme_get_max_reg_power(iface->vdev);
 
 	mlme_set_max_reg_power(iface->vdev, tx_pwr_params->power);
@@ -1222,6 +1192,14 @@ static void wma_update_beacon_noa_ie(struct beacon_info *bcn,
 			 bcn->len);
 		buf = qdf_nbuf_data(bcn->buf);
 		bcn->noa_ie = buf + bcn->len;
+	}
+
+	if (bcn->len + sizeof(struct p2p_ie) + new_noa_sub_ie_len >
+	    SIR_MAX_BEACON_SIZE) {
+		wma_err("exceed max beacon length, bcn->len %d, new_noa_sub_ie_len %d, p2p len %u",
+			bcn->len, new_noa_sub_ie_len,
+			(uint32_t)sizeof(struct p2p_ie));
+		return;
 	}
 
 	bcn->noa_sub_ie_len = new_noa_sub_ie_len;

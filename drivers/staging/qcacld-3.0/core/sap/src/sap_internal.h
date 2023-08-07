@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -221,7 +222,7 @@ struct sap_context {
 	bool vendor_acs_dfs_lte_enabled;
 	uint8_t dfs_vendor_channel;
 	uint8_t dfs_vendor_chan_bw;
-	uint8_t chan_before_pre_cac;
+	qdf_freq_t freq_before_pre_cac;
 	uint16_t beacon_tx_rate;
 	enum sap_acs_dfs_mode dfs_mode;
 	wlan_scan_requester req_id;
@@ -230,6 +231,13 @@ struct sap_context {
 	bool is_chan_change_inprogress;
 	qdf_list_t owe_pending_assoc_ind_list;
 	uint32_t freq_before_ch_switch;
+#ifdef WLAN_FEATURE_P2P_P2P_STA
+/*
+ *This param is used for GO+GO force scc logic where after
+ *setkey first GO will move to latest GO's channel
+ */
+	bool is_forcescc_restart_required;
+#endif
 };
 
 /*----------------------------------------------------------------------------

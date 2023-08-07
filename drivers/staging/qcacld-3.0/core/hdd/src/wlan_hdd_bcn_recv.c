@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -321,6 +322,11 @@ static int __wlan_hdd_cfg80211_bcn_rcv_op(struct wiphy *wiphy,
 
 	hdd_enter_dev(dev);
 
+	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
+		hdd_err("Command not allowed in FTM mode");
+		return -EPERM;
+	}
+
 	errno = hdd_validate_adapter(adapter);
 	if (errno)
 		return errno;
@@ -486,7 +492,7 @@ void hdd_beacon_recv_pause_indication(hdd_handle_t hdd_handle,
 							    adapter);
 
 		switch (type) {
-		case SCAN_EVENT_TYPE_FOREIGN_CHANNEL:
+		case SCAN_EVENT_TYPE_STARTED:
 			abort_reason =
 		     QCA_WLAN_VENDOR_BEACON_REPORTING_PAUSE_REASON_SCAN_STARTED;
 			break;
